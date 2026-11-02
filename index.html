@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>얼굴 가리기</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --ink: #1d2433; --sub: #5b6475; --line: #dde1e8;
+    --accent: #2f6fed; --accent-ink: #fff; --off: #9aa3b2; --danger: #e5484d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 20px 16px 60px; }
+  header h1 { margin: 0 0 4px; font-size: 1.6rem; }
+  header p { margin: 0 0 18px; color: var(--sub); font-size: .95rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+
+  .drop {
+    border: 2px dashed var(--line); border-radius: 14px; background: var(--card);
+    padding: 48px 16px; text-align: center; color: var(--sub); cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .drop.over { border-color: var(--accent); background: #eef3fe; }
+  .drop .big { font-size: 2.6rem; display: block; margin-bottom: 6px; }
+
+  button, .btn {
+    font: inherit; border: 1px solid var(--line); background: #fff; color: var(--ink);
+    border-radius: 10px; padding: 9px 14px; cursor: pointer; white-space: nowrap;
+  }
+  button:hover { border-color: #b9c0cc; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+
+  .controls { display: grid; gap: 14px; margin-bottom: 14px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+  .row > .label { font-weight: 600; min-width: 84px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 8px 14px; }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button.on { background: var(--accent); color: #fff; }
+  input[type=range] { width: 180px; accent-color: var(--accent); }
+  .emojis { display: flex; flex-wrap: wrap; gap: 4px; }
+  .emojis button { font-size: 1.35rem; padding: 3px 7px; line-height: 1.3; }
+  .emojis button.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+  #customEmoji { width: 64px; font-size: 1.2rem; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; text-align: center; }
+  label.check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+
+  .stage-area { text-align: center; background: #e9ecf1; border-radius: 12px; padding: 10px; }
+  .stage { position: relative; display: inline-block; line-height: 0; max-width: 100%; }
+  #out { max-width: 100%; max-height: 72vh; display: block; }
+  #overlay { position: absolute; inset: 0; cursor: crosshair; touch-action: none; }
+  .box {
+    position: absolute; border: 2px solid #35d07f; border-radius: 4px;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.35); cursor: move;
+  }
+  .box.circle { border-radius: 50%; }
+  .box.off { border: 2px dashed #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.5); background: rgba(0,0,0,.12); }
+  .box .x {
+    position: absolute; top: -11px; right: -11px; width: 22px; height: 22px; padding: 0;
+    border-radius: 50%; background: var(--danger); color: #fff; border: 2px solid #fff;
+    font-size: 13px; line-height: 16px; font-weight: 700; cursor: pointer;
+  }
+  .box.circle .x { top: 0; right: 0; }
+  #overlay.hide .box { display: none; }
+  .drawing { position: absolute; border: 2px dashed #ffd400; background: rgba(255,212,0,.15); }
+
+  .status { margin: 10px 0 0; font-size: .95rem; color: var(--sub); min-height: 1.5em; }
+  .status.warn { color: #b25e00; }
+  .hint { font-size: .88rem; color: var(--sub); margin: 8px 0 0; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .actions .spacer { flex: 1; }
+  footer { margin-top: 26px; font-size: .82rem; color: var(--sub); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🙈 얼굴 가리기</h1>
+    <p>사진 속 얼굴을 자동으로 찾아 모자이크·블러·이모티콘으로 가려 줍니다. 사진은 이 기기 안에서만 처리되고 어디에도 올라가지 않아요.</p>
+  </header>
+
+  <!-- 1단계: 사진 넣기 -->
+  <label id="drop" class="drop" for="file">
+    <span class="big">🖼️</span>
+    <strong>여기를 눌러 사진 선택</strong><br>
+    또는 사진을 끌어다 놓거나 붙여넣기(Ctrl+V) 하세요
+    <input type="file" id="file" accept="image/*" hidden>
+  </label>
+
+  <!-- 2단계: 편집 -->
+  <section id="editor" class="card" hidden>
+    <div class="controls">
+      <div class="row">
+        <span class="label">가리는 방식</span>
+        <div class="seg" id="modeSeg">
+          <button data-mode="mosaic" class="on">모자이크</button>
+          <button data-mode="blur">블러</button>
+          <button data-mode="emoji">이모티콘</button>
+        </div>
+      </div>
+
+      <div class="row" id="emojiRow" hidden>
+        <span class="label">이모티콘</span>
+        <div class="emojis" id="emojis"></div>
+        <input id="customEmoji" maxlength="8" placeholder="직접" title="원하는 이모티콘을 직접 입력">
+        <label class="check"><input type="checkbox" id="randomEmoji"> 얼굴마다 다르게</label>
+      </div>
+
+      <div class="row" id="strengthRow">
+        <span class="label">세기</span>
+        <input type="range" id="strength" min="1" max="10" value="6">
+        <span id="strengthTxt"></span>
+      </div>
+
+      <div class="row">
+        <span class="label">가리는 크기</span>
+        <input type="range" id="pad" min="0" max="100" value="35">
+        <span id="padTxt"></span>
+      </div>
+
+      <div class="row">
+        <span class="label">모양</span>
+        <div class="seg" id="shapeSeg">
+          <button data-shape="rect">네모</button>
+          <button data-shape="circle" class="on">동그라미</button>
+        </div>
+        <label class="check"><input type="checkbox" id="hideBoxes"> 초록 테두리 숨기기</label>
+      </div>
+    </div>
+
+    <div class="stage-area">
+      <div class="stage">
+        <canvas id="out"></canvas>
+        <div id="overlay"></div>
+      </div>
+    </div>
+    <p class="status" id="status"></p>
+    <p class="hint">
+      👆 테두리를 누르면 가리기 켜기/끄기 · 끌면 위치 이동 · <b style="color:var(--danger)">×</b>로 삭제<br>
+      ✏️ 못 찾은 얼굴은 사진의 빈 곳을 드래그해서 직접 추가하세요
+    </p>
+
+    <div class="actions">
+      <button id="redetect">🔍 얼굴 다시 찾기</button>
+      <label class="check"><input type="checkbox" id="thorough"> 꼼꼼하게 (작은 얼굴이 많은 단체사진)</label>
+      <button id="clearAll">테두리 모두 지우기</button>
+      <span class="spacer"></span>
+      <button id="another">다른 사진</button>
+      <button id="share" hidden>공유</button>
+      <button id="save" class="primary">💾 저장하기</button>
+    </div>
+  </section>
+
+  <footer>
+    자동 인식이 모든 얼굴을 찾지 못할 수 있어요. 저장하기 전에 꼭 한 번 눈으로 확인해 주세요.
+    저장한 사진에는 촬영 위치 같은 사진 정보(EXIF)가 남지 않아요.
+  </footer>
+</div>
+
+<script type="module">
+// ===== 얼굴 인식 라이브러리 (MediaPipe) =====
+const MP_VER = "0.10.14";
+const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VER}`;
+const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite";
+
+const $ = (id) => document.getElementById(id);
+const out = $("out"), octx = out.getContext("2d");
+const overlay = $("overlay");
+const statusEl = $("status");
+
+const EMOJIS = ["😊","🙂","😎","🤓","🥳","🐶","🐱","🐰","🐻","🐼","⭐","🌸","❤️","🍀"];
+const MAX_SIDE = 4096; // 너무 큰 사진은 줄여서 처리 (휴대폰 메모리 보호)
+
+const state = {
+  img: null,        // 원본 (작업 크기로 맞춘 캔버스)
+  name: "photo",
+  type: "image/jpeg",
+  boxes: [],        // {x,y,w,h,on,manual,emoji}
+  mode: "mosaic",
+  shape: "circle",
+  strength: 6,
+  pad: 35,
+  emoji: "😊",
+  randomEmoji: false,
+};
+
+// ---------- 상태 표시 ----------
+function setStatus(msg, warn = false) {
+  statusEl.textContent = msg;
+  statusEl.classList.toggle("warn", warn);
+}
+
+// ---------- 인식기 불러오기 (페이지 열리자마자 미리) ----------
+let detectorPromise = null;
+function getDetector() {
+  if (!detectorPromise) {
+    detectorPromise = (async () => {
+      const { FilesetResolver, FaceDetector } = await import(`${MP_BASE}/vision_bundle.mjs`);
+      const fileset = await FilesetResolver.forVisionTasks(`${MP_BASE}/wasm`);
+      return await FaceDetector.createFromOptions(fileset, {
+        baseOptions: { modelAssetPath: MODEL_URL, delegate: "CPU" },
+        runningMode: "IMAGE",
+        minDetectionConfidence: 0.5,
+      });
+    })();
+    detectorPromise.catch(() => { detectorPromise = null; }); // 실패하면 다음에 다시 시도
+  }
+  return detectorPromise;
+}
+getDetector().catch(() => {});
+
+// ---------- 얼굴 찾기 ----------
+// 이 모델은 가까이 찍힌 얼굴에 강해서, 단체사진은 사진을 조각내 확대해 가며 여러 번 찾고 합칩니다.
+async function detectFaces(src, thorough) {
+  const det = await getDetector();
+  const W = src.width, H = src.height;
+  const grids = thorough ? [1, 2, 3, 4, 5] : [1, 2, 3];
+  const tile = document.createElement("canvas");
+  const tctx = tile.getContext("2d");
+  const found = [];
+
+  for (const n of grids) {
+    const tw = n === 1 ? W : Math.min(W, Math.round(W / n * 1.5));
+    const th = n === 1 ? H : Math.min(H, Math.round(H / n * 1.5));
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        const tx = n === 1 ? 0 : Math.round(i * (W - tw) / (n - 1));
+        const ty = n === 1 ? 0 : Math.round(j * (H - th) / (n - 1));
+        const scale = Math.min(1, 1024 / Math.max(tw, th));
+        tile.width = Math.max(1, Math.round(tw * scale));
+        tile.height = Math.max(1, Math.round(th * scale));
+        tctx.drawImage(src, tx, ty, tw, th, 0, 0, tile.width, tile.height);
+        const res = det.detect(tile);
+        for (const d of res.detections || []) {
+          const b = d.boundingBox;
+          const score = d.categories && d.categories[0] ? d.categories[0].score : 1;
+          const box = {
+            x: tx + b.originX / scale, y: ty + b.originY / scale,
+            w: b.width / scale, h: b.height / scale, score,
+          };
+          if (box.w < 6 || box.h < 6) continue;
+          if (n > 1 && score < 0.6) continue; // 확대 조각에서는 더 확실한 것만
+          found.push(box);
+        }
+        await new Promise(r => setTimeout(r)); // 화면 멈춤 방지
+      }
+    }
+  }
+  return mergeBoxes(found, W, H);
+}
+
+// 여러 번 찾은 같은 얼굴을 하나로 합치기
+function mergeBoxes(list, W, H) {
+  list.forEach(b => { // 사진 밖으로 나간 부분 자르기
+    const x2 = Math.min(W, b.x + b.w), y2 = Math.min(H, b.y + b.h);
+    b.x = Math.max(0, b.x); b.y = Math.max(0, b.y);
+    b.w = x2 - b.x; b.h = y2 - b.y;
+  });
+  list.sort((a, b) => b.w * b.h - a.w * a.h); // 큰 것 우선 (조각 가장자리에서 잘린 얼굴보다 온전한 얼굴)
+  const kept = [];
+  for (const b of list) {
+    const dup = kept.some(k => {
+      const ix = Math.max(0, Math.min(k.x + k.w, b.x + b.w) - Math.max(k.x, b.x));
+      const iy = Math.max(0, Math.min(k.y + k.h, b.y + b.h) - Math.max(k.y, b.y));
+      return ix * iy > 0.4 * Math.min(k.w * k.h, b.w * b.h);
+    });
+    // 너무 큰 상자 하나가 작은 얼굴 여러 개를 덮는 오인식 방지: 크기 차이가 아주 크면 합치지 않음
+    if (!dup) kept.push(b);
+  }
+  return kept.filter(b => b.w > 0 && b.h > 0);
+}
+
+// ---------- 가릴 영역 계산 ----------
+function regionOf(b) {
+  if (b.manual) return { x: b.x, y: b.y, w: b.w, h: b.h };
+  const k = 1 + state.pad / 100;
+  const w = b.w * k, h = b.h * k * 1.12;               // 머리카락/턱까지 조금 더
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2 - b.h * 0.08; // 살짝 위로
+  return { x: cx - w / 2, y: cy - h / 2, w, h };
+}
+
+// ---------- 그리기 ----------
+const tmp = document.createElement("canvas");
+const tmpCtx = tmp.getContext("2d");
+const canvasFilter = "filter" in CanvasRenderingContext2D.prototype;
+
+function render() {
+  const img = state.img;
+  if (!img) return;
+  octx.filter = "none";
+  octx.drawImage(img, 0, 0);
+  for (const b of state.boxes) if (b.on) applyEffect(regionOf(b), b);
+  drawOverlay();
+}
+
+function clipShape(ctx, r) {
+  ctx.beginPath();
+  if (state.shape === "circle") ctx.ellipse(r.x + r.w / 2, r.y + r.h / 2, r.w / 2, r.h / 2, 0, 0, Math.PI * 2);
+  else ctx.rect(r.x, r.y, r.w, r.h);
+  ctx.clip();
+}
+
+function applyEffect(r, b) {
+  const img = state.img, W = img.width, H = img.height;
+  const s = state.strength;
+
+  if (state.mode === "emoji") {
+    const e = state.randomEmoji ? b.emoji : state.emoji;
+    const size = Math.max(r.w, r.h) * 1.2;
+    octx.save();
+    octx.font = `${size}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","Twemoji Mozilla",sans-serif`;
+    octx.textAlign = "center";
+    octx.textBaseline = "middle";
+    octx.fillText(e, r.x + r.w / 2, r.y + r.h / 2 + size * 0.06);
+    octx.restore();
+    return;
+  }
+
+  // 사진 범위 안쪽으로 맞추기
+  const x0 = Math.max(0, Math.floor(r.x)), y0 = Math.max(0, Math.floor(r.y));
+  const x1 = Math.min(W, Math.ceil(r.x + r.w)), y1 = Math.min(H, Math.ceil(r.y + r.h));
+  const rw = x1 - x0, rh = y1 - y0;
+  if (rw < 2 || rh < 2) return;
+
+  octx.save();
+  clipShape(octx, r);
+
+  if (state.mode === "mosaic") {
+    const cells = 15 - s;                       // 세기 1 → 14칸, 10 → 5칸 (얼굴 너비 기준)
+    const block = Math.max(3, Math.round(Math.max(r.w, r.h) / cells));
+    const sw = Math.ceil(rw / block), sh = Math.ceil(rh / block);
+    tmp.width = sw; tmp.height = sh;
+    tmpCtx.imageSmoothingEnabled = true;
+    tmpCtx.drawImage(img, x0, y0, sw * block, sh * block, 0, 0, sw, sh);
+    octx.imageSmoothingEnabled = false;
+    octx.drawImage(tmp, 0, 0, sw, sh, x0, y0, sw * block, sh * block);
+    octx.imageSmoothingEnabled = true;
+  } else { // blur
+    const radius = Math.max(r.w, r.h) * (0.04 + s * 0.016); // 얼굴 크기에 비례
+    const m = Math.ceil(radius * 2);
+    const ax = Math.max(0, x0 - m), ay = Math.max(0, y0 - m);
+    const aw = Math.min(W, x1 + m) - ax, ah = Math.min(H, y1 + m) - ay;
+    if (canvasFilter) {
+      tmp.width = aw; tmp.height = ah;
+      tmpCtx.filter = `blur(${radius}px)`;
+      tmpCtx.drawImage(img, ax, ay, aw, ah, 0, 0, aw, ah);
+      tmpCtx.filter = "none";
+      octx.drawImage(tmp, ax, ay);
+    } else {
+      // 필터를 못 쓰는 브라우저: 작게 줄였다 키워서 흐리게
+      const f = Math.max(2, radius / 1.5);
+      tmp.width = Math.max(1, Math.round(aw / f)); tmp.height = Math.max(1, Math.round(ah / f));
+      tmpCtx.imageSmoothingEnabled = true; tmpCtx.imageSmoothingQuality = "high";
+      tmpCtx.drawImage(img, ax, ay, aw, ah, 0, 0, tmp.width, tmp.height);
+      octx.imageSmoothingQuality = "high";
+      octx.drawImage(tmp, 0, 0, tmp.width, tmp.height, ax, ay, aw, ah);
+    }
+  }
+  octx.restore();
+}
+
+// ---------- 테두리(화면용) ----------
+function drawOverlay() {
+  const W = state.img.width, H = state.img.height;
+  overlay.querySelectorAll(".box").forEach(el => el.remove());
+  state.boxes.forEach((b, i) => {
+    const r = regionOf(b);
+    const el = document.createElement("div");
+    el.className = "box" + (b.on ? "" : " off") + (state.shape === "circle" ? " circle" : "");
+    el.dataset.i = i;
+    el.style.left = (r.x / W * 100) + "%";
+    el.style.top = (r.y / H * 100) + "%";
+    el.style.width = (r.w / W * 100) + "%";
+    el.style.height = (r.h / H * 100) + "%";
+    el.title = b.on ? "누르면 가리기 끄기" : "누르면 다시 가리기";
+    const x = document.createElement("button");
+    x.className = "x"; x.textContent = "×"; x.title = "삭제";
+    el.appendChild(x);
+    overlay.appendChild(el);
+  });
+}
+
+// ---------- 마우스/터치 조작 ----------
+let drag = null;
+function toImg(e) {
+  const rc = overlay.getBoundingClientRect();
+  return {
+    x: (e.clientX - rc.left) / rc.width * state.img.width,
+    y: (e.clientY - rc.top) / rc.height * state.img.height,
+    sx: e.clientX, sy: e.clientY,
+  };
+}
+
+overlay.addEventListener("pointerdown", (e) => {
+  if (!state.img) return;
+  if (e.target.classList.contains("x")) {
+    const i = +e.target.parentElement.dataset.i;
+    state.boxes.splice(i, 1);
+    render(); updateCount();
+    e.preventDefault();
+    return;
+  }
+  const p = toImg(e);
+  const boxEl = e.target.closest(".box");
+  overlay.setPointerCapture(e.pointerId);
+  if (boxEl) {
+    const b = state.boxes[+boxEl.dataset.i];
+    drag = { kind: "move", b, start: p, ox: b.x, oy: b.y, moved: false };
+  } else {
+    const el = document.createElement("div");
+    el.className = "drawing";
+    overlay.appendChild(el);
+    drag = { kind: "new", start: p, el };
+  }
+  e.preventDefault();
+});
+
+overlay.addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  const p = toImg(e);
+  if (drag.kind === "move") {
+    if (!drag.moved && Math.hypot(p.sx - drag.start.sx, p.sy - drag.start.sy) < 6) return;
+    drag.moved = true;
+    drag.b.x = drag.ox + (p.x - drag.start.x);
+    drag.b.y = drag.oy + (p.y - drag.start.y);
+    render();
+  } else {
+    const W = state.img.width, H = state.img.height;
+    const x = Math.min(p.x, drag.start.x), y = Math.min(p.y, drag.start.y);
+    const w = Math.abs(p.x - drag.start.x), h = Math.abs(p.y - drag.start.y);
+    Object.assign(drag.el.style, {
+      left: x / W * 100 + "%", top: y / H * 100 + "%", width: w / W * 100 + "%", height: h / H * 100 + "%",
+    });
+    drag.cur = { x, y, w, h, sw: Math.abs(p.sx - drag.start.sx), sh: Math.abs(p.sy - drag.start.sy) };
+  }
+});
+
+function endDrag() {
+  if (!drag) return;
+  if (drag.kind === "move") {
+    if (!drag.moved) drag.b.on = !drag.b.on;
+    render(); updateCount();
+  } else {
+    drag.el.remove();
+    const c = drag.cur;
+    if (c && c.sw > 10 && c.sh > 10) {
+      state.boxes.push({ x: c.x, y: c.y, w: c.w, h: c.h, on: true, manual: true, emoji: pickRandomEmoji() });
+      render(); updateCount();
+    }
+  }
+  drag = null;
+}
+overlay.addEventListener("pointerup", endDrag);
+overlay.addEventListener("pointercancel", endDrag);
+
+function pickRandomEmoji() { return EMOJIS[Math.floor(Math.random() * EMOJIS.length)]; }
+
+function updateCount() {
+  const on = state.boxes.filter(b => b.on).length;
+  const total = state.boxes.length;
+  if (total === 0) setStatus("가릴 곳이 없어요. 사진의 빈 곳을 드래그해서 직접 추가할 수 있어요.");
+  else setStatus(`가리는 곳 ${on}개` + (total > on ? ` (꺼 둔 곳 ${total - on}개)` : ""));
+}
+
+// ---------- 사진 불러오기 ----------
+async function loadFile(file) {
+  if (!file || !file.type.startsWith("image/")) { alert("사진 파일을 선택해 주세요."); return; }
+  let bmp;
+  try {
+    bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+  } catch {
+    bmp = await new Promise((res, rej) => {
+      const im = new Image();
+      im.onload = () => res(im); im.onerror = rej;
+      im.src = URL.createObjectURL(file);
+    }).catch(() => null);
+  }
+  if (!bmp) { alert("이 사진은 열 수 없어요. (HEIC 사진이라면 JPG로 바꿔서 넣어 주세요)"); return; }
+
+  const sc = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
+  const c = document.createElement("canvas");
+  c.width = Math.round(bmp.width * sc); c.height = Math.round(bmp.height * sc);
+  c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+
+  state.img = c;
+  state.name = (file.name || "photo").replace(/\.[^.]+$/, "") || "photo";
+  state.type = file.type === "image/png" ? "image/png" : "image/jpeg";
+  state.boxes = [];
+  out.width = c.width; out.height = c.height;
+
+  $("drop").hidden = true;
+  $("editor").hidden = false;
+  render();
+  runDetect();
+}
+
+async function runDetect() {
+  const btn = $("redetect");
+  btn.disabled = true;
+  setStatus("🔍 얼굴을 찾는 중이에요…");
+  try {
+    const faces = await detectFaces(state.img, $("thorough").checked);
+    state.boxes = state.boxes.filter(b => b.manual).concat(
+      faces.map(f => ({ ...f, on: true, manual: false, emoji: pickRandomEmoji() }))
+    );
+    render();
+    if (faces.length === 0) {
+      setStatus("얼굴을 찾지 못했어요. '꼼꼼하게'를 켜고 다시 찾거나, 빈 곳을 드래그해서 직접 추가하세요.", true);
+    } else {
+      updateCount();
+    }
+  } catch (err) {
+    console.error(err);
+    render();
+    setStatus("⚠️ 얼굴 자동 인식을 불러오지 못했어요(인터넷 연결 확인). 빈 곳을 드래그하면 직접 가릴 수 있어요.", true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ---------- 저장 / 공유 ----------
+function getBlob() {
+  const draw = () => new Promise(res => out.toBlob(res, state.type, 0.92));
+  return draw();
+}
+function outName() { return `${state.name}_masked.${state.type === "image/png" ? "png" : "jpg"}`; }
+
+$("save").onclick = async () => {
+  const blob = await getBlob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = outName();
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+};
+
+if (navigator.canShare) {
+  try {
+    const probe = new File([new Blob(["x"], { type: "image/jpeg" })], "a.jpg", { type: "image/jpeg" });
+    if (navigator.canShare({ files: [probe] })) $("share").hidden = false;
+  } catch {}
+}
+$("share").onclick = async () => {
+  const blob = await getBlob();
+  const f = new File([blob], outName(), { type: state.type });
+  try { await navigator.share({ files: [f] }); } catch {}
+};
+
+// ---------- 컨트롤 ----------
+function segment(id, key, after) {
+  $(id).addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    $(id).querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+    state[key] = b.dataset[key];
+    after && after();
+    render();
+  });
+}
+segment("modeSeg", "mode", () => {
+  $("emojiRow").hidden = state.mode !== "emoji";
+  $("strengthRow").hidden = state.mode === "emoji";
+});
+segment("shapeSeg", "shape");
+
+const emojiBox = $("emojis");
+EMOJIS.forEach(e => {
+  const b = document.createElement("button");
+  b.textContent = e; if (e === state.emoji) b.classList.add("on");
+  b.onclick = () => {
+    state.emoji = e; $("customEmoji").value = "";
+    emojiBox.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+    render();
+  };
+  emojiBox.appendChild(b);
+});
+$("customEmoji").addEventListener("input", (e) => {
+  const v = e.target.value.trim();
+  if (!v) return;
+  state.emoji = v;
+  emojiBox.querySelectorAll("button").forEach(x => x.classList.remove("on"));
+  render();
+});
+$("randomEmoji").onchange = (e) => { state.randomEmoji = e.target.checked; render(); };
+
+const strengthNames = ["", "아주 약하게", "약하게", "약하게", "보통", "보통", "보통", "강하게", "강하게", "아주 강하게", "아주 강하게"];
+$("strength").oninput = (e) => { state.strength = +e.target.value; $("strengthTxt").textContent = strengthNames[state.strength]; render(); };
+$("pad").oninput = (e) => { state.pad = +e.target.value; $("padTxt").textContent = `얼굴보다 ${state.pad}% 크게`; render(); };
+$("strengthTxt").textContent = strengthNames[state.strength];
+$("padTxt").textContent = `얼굴보다 ${state.pad}% 크게`;
+$("hideBoxes").onchange = (e) => overlay.classList.toggle("hide", e.target.checked);
+
+$("redetect").onclick = () => runDetect();
+$("clearAll").onclick = () => { state.boxes = []; render(); updateCount(); };
+$("another").onclick = () => { $("file").value = ""; $("file").click(); };
+
+// ---------- 사진 넣는 방법들 ----------
+$("file").addEventListener("change", (e) => loadFile(e.target.files[0]));
+const drop = $("drop");
+["dragenter", "dragover"].forEach(t => document.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(t => document.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+document.addEventListener("drop", (e) => { const f = e.dataTransfer.files[0]; if (f) loadFile(f); });
+window.addEventListener("paste", (e) => {
+  const f = [...(e.clipboardData?.files || [])].find(f => f.type.startsWith("image/"));
+  if (f) loadFile(f);
+});
+</script>
+</body>
+</html>
